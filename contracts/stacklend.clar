@@ -91,3 +91,58 @@
     ))
 )
 
+;; Public Functions
+(define-public (deposit)
+    (let (
+        (amount (stx-get-balance tx-sender))
+    )
+    (if (> amount u0)
+        (begin
+            (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+            (var-set total-deposits (+ (var-get total-deposits) amount))
+            (update-user-position tx-sender amount true u0 true)
+            (ok amount)
+        )
+        ERR-INVALID-AMOUNT
+    ))
+)
+
+(define-public (borrow (amount uint))
+    (let (
+        (user-pos (default-to
+            { total-collateral: u0, total-borrowed: u0, loan-count: u0 }
+            (map-get? user-positions { user: tx-sender })))
+        (collateral (get total-collateral user-pos))
+        (current-borrowed (get total-borrowed user-pos))
+    )
+    (if (and
+            (> amount u0)
+            (>= (get-collateral-ratio collateral (+ current-borrowed amount))
+                (var-get minimum-collateral-ratio)))
+        (begin
+            (try! (as-contract (stx-transfer? amount (as-contract tx-sender) tx-sender)))
+            (var-set total-borrows (+ (var-get total-borrows) amount))
+            (update-user-position tx-sender u0 true amount true)
+            (ok amount)
+        )
+        ERR-INSUFFICIENT-COLLATERAL
+    ))
+)
+
+(define-public (repay (amount uint))
+    (let (
+        (user-pos (default-to
+            { total-collateral: u0, total-borrowed: u0, loan-count: u0 }
+            (map-get? user-positions { user: tx-sender })))
+        (current-borrowed (get total-borrowed user-pos))
+    )
+    (if (<= amount current-borrowed)
+        (begin
+            (try! (stx-transfer? amount tx-sender (as-contract tx-sender)))
+            (var-set total-borrows (- (var-get total-borrows) amount))
+            (update-user-position tx-sender u0 true amount false)
+            (ok amount)
+        )
+        ERR-INVALID-AMOUNT
+    ))
+)
